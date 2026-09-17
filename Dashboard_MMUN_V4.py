@@ -5,58 +5,30 @@ from streamlit_folium import st_folium
 import re
 import base64
 
-# Configuración de la página
-st.set_page_config(
-    page_title="Dashboard Ejecutivo ATFM - SENEAM V4", 
-    page_icon="Seneam_Logo.png", 
-    layout="wide"
-)
+st.set_page_config(page_title="Dashboard Ejecutivo ATFM - SENEAM V5", page_icon="Seneam_Logo.png", layout="wide")
 
 def get_base64_of_bin_file(bin_file):
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+    try:
+        with open(bin_file, 'rb') as f:
+            return base64.b64encode(f.read()).decode()
+    except: return None
 
-try:
-    img_base64 = get_base64_of_bin_file('Seneam_Logo.png')
-    logo_html = f'<img src="data:image/png;base64,{img_base64}" style="height: 60px; vertical-align: middle; margin-right: 15px;">'
-except:
-    logo_html = ""
+img_base64 = get_base64_of_bin_file('Seneam_Logo.png')
+logo_html = f'<img src="data:image/png;base64,{img_base64}" style="height: 60px; vertical-align: middle; margin-right: 15px;">' if img_base64 else ""
 
 st.markdown("""
     <style>
-    /* Fondo de la aplicación */
     .main {background-color: #0c2340;}
-    
-    /* Títulos principales */
-    h1 {
-        color: #FFFFFF !important; 
-        font-family: 'Helvetica Neue', sans-serif;
-        display: flex;
-        align-items: center;
-    }
-    
-    p {color: #FFFFFF;}
-    
-    .stSelectbox label p, 
-    .stRadio label p, 
-    div[role="radiogroup"] label div {
-        color: #FFFFFF !important;
-        font-weight: bold;
-    }
-    
-    div[data-baseweb="select"] span {
-        color: #000000 !important;
-    }
+    h1 {color: #FFFFFF !important; font-family: 'Helvetica Neue', sans-serif; display: flex; align-items: center;}
+    p, .stSelectbox label p, .stRadio label p, div[role="radiogroup"] label div {color: #FFFFFF !important; font-weight: bold;}
+    div[data-baseweb="select"] span {color: #000000 !important;}
     </style>
 """, unsafe_allow_html=True)
 
-# Título
 st.markdown(f"<h1>{logo_html} Análisis Dinámico de Rutas RNAV/PBN - MMUN</h1>", unsafe_allow_html=True)
 st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Periodo:** Septiembre 2026")
 st.markdown("<hr style='border: 1px solid #00FFFF;'>", unsafe_allow_html=True)
 
-# DICCIONARIO BASE DE COORDENADAS SENEAM
 COORDENADAS = {
     'MMUN': (21.0366, -86.8770),
     'MMMX': (19.4361, -99.0719), 'MMMY': (25.7785, -100.1069), 'MMSM': (19.7573, -99.0165),
@@ -99,11 +71,22 @@ def extract_trajectory(route_string, adep, ades, is_arrival):
     elif not is_arrival and ades in COORDENADAS: path.append(COORDENADAS[ades])
     return path
 
+def limpiar_datos(df, columna_filtro):
+    # Filtramos para eliminar las filas de resúmenes y gráficos extraños generados por otros scripts
+    # Conservamos solo filas donde el indicativo de aeropuerto o callsign tiene lógica (texto de 4 letras min)
+    if df is not None and not df.empty and columna_filtro in df.columns:
+        return df[df[columna_filtro].apply(lambda x: isinstance(x, str) and len(str(x)) == 4)]
+    return pd.DataFrame()
+
 @st.cache_data
 def cargar_datos_dia(dia_seleccionado):
     try:
-        df_lleg = pd.read_excel('lleg_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
-        df_sal = pd.read_excel('sal_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
+        df_lleg_bruto = pd.read_excel('lleg_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
+        df_sal_bruto = pd.read_excel('sal_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
+        
+        # Se limpian los dataframes aislando únicamente los vuelos reales
+        df_lleg = limpiar_datos(df_lleg_bruto, 'adep')
+        df_sal = limpiar_datos(df_sal_bruto, 'ades')
         return df_lleg, df_sal
     except Exception as e:
         return None, None
@@ -112,14 +95,13 @@ try:
     xls = pd.ExcelFile('lleg_MMUN_sept_2026.xlsx')
     dias_disponibles = [hoja for hoja in xls.sheet_names if hoja.startswith('2026-')]
 except:
-    st.error("Asegúrate de colocar 'lleg_MMUN_sept_2026.xlsx' y 'sal_MMUN_sept_2026.xlsx' en esta carpeta.")
+    st.error("Archivos Excel no encontrados.")
     st.stop()
 
 col_filtros, col_mapa = st.columns([1, 3])
 
 with col_filtros:
     st.markdown("<h2 style='color: #FFFFFF;'>Filtros Operativos</h2>", unsafe_allow_html=True)
-    
     dia_seleccionado = st.selectbox("Seleccione el Día:", dias_disponibles)
     flujo = st.radio("Flujo de Tránsito:", ["Llegadas", "Salidas", "Llegadas y Salidas"])
     
@@ -140,27 +122,21 @@ with col_filtros:
         st.info(f"Total de Salidas: **{total_salidas}**")
 
 with col_mapa:
-    # Solución definitiva para el fondo oscuro: Esri Dark Gray Canvas
-    # Este mapa es gratuito, no requiere API KEY y es un estándar en GIS/Aviación
     tiles_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
     attr = 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
     
     m = folium.Map(location=[21.0366, -86.8770], zoom_start=5, tiles=tiles_url, attr=attr)
     
-    if flujo in ["Llegadas", "Llegadas y Salidas"]:
+    if flujo in ["Llegadas", "Llegadas y Salidas"] and not df_lleg.empty:
         for _, row in df_lleg.iterrows():
-            trayectoria = extract_trajectory(row['route'], row['adep'], row['ades'], is_arrival=True)
-            if len(trayectoria) > 1:
-                folium.PolyLine(locations=trayectoria, color="#00FFFF", weight=1.5, opacity=0.4).add_to(m)
+            trayectoria = extract_trajectory(row['route'], row.get('adep', ''), row.get('ades', ''), is_arrival=True)
+            if len(trayectoria) > 1: folium.PolyLine(locations=trayectoria, color="#00FFFF", weight=1.5, opacity=0.4).add_to(m)
                 
-    if flujo in ["Salidas", "Llegadas y Salidas"]:
+    if flujo in ["Salidas", "Llegadas y Salidas"] and not df_sal.empty:
         for _, row in df_sal.iterrows():
-            trayectoria = extract_trajectory(row['route'], row['adep'], row['ades'], is_arrival=False)
-            if len(trayectoria) > 1:
-                folium.PolyLine(locations=trayectoria, color="#FF0000", weight=1.5, opacity=0.4).add_to(m)
+            trayectoria = extract_trajectory(row['route'], row.get('adep', ''), row.get('ades', ''), is_arrival=False)
+            if len(trayectoria) > 1: folium.PolyLine(locations=trayectoria, color="#FF0000", weight=1.5, opacity=0.4).add_to(m)
                 
-    folium.CircleMarker(
-        location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN"
-    ).add_to(m)
+    folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
     
     st_folium(m, width=900, height=600)

@@ -5,7 +5,7 @@ from streamlit_folium import st_folium
 import re
 import base64
 
-st.set_page_config(page_title="Dashboard Ejecutivo ATFM - SENEAM V5", page_icon="Seneam_Logo.png", layout="wide")
+st.set_page_config(page_title="Dashboard Ejecutivo ATFM - SENEAM V6", page_icon="Seneam_Logo.png", layout="wide")
 
 def get_base64_of_bin_file(bin_file):
     try:
@@ -18,9 +18,15 @@ logo_html = f'<img src="data:image/png;base64,{img_base64}" style="height: 60px;
 
 st.markdown("""
     <style>
-    .main {background-color: #0c2340;}
+    /* Forzar fondo oscuro absoluto contra el Modo Claro del sistema operativo */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+        background-color: #0c2340 !important;
+    }
+    
     h1 {color: #FFFFFF !important; font-family: 'Helvetica Neue', sans-serif; display: flex; align-items: center;}
     p, .stSelectbox label p, .stRadio label p, div[role="radiogroup"] label div {color: #FFFFFF !important; font-weight: bold;}
+    
+    /* Mantener el texto oscuro dentro de las cajas de selección para que sea legible */
     div[data-baseweb="select"] span {color: #000000 !important;}
     </style>
 """, unsafe_allow_html=True)
@@ -72,8 +78,6 @@ def extract_trajectory(route_string, adep, ades, is_arrival):
     return path
 
 def limpiar_datos(df, columna_filtro):
-    # Filtramos para eliminar las filas de resúmenes y gráficos extraños generados por otros scripts
-    # Conservamos solo filas donde el indicativo de aeropuerto o callsign tiene lógica (texto de 4 letras min)
     if df is not None and not df.empty and columna_filtro in df.columns:
         return df[df[columna_filtro].apply(lambda x: isinstance(x, str) and len(str(x)) == 4)]
     return pd.DataFrame()
@@ -84,7 +88,6 @@ def cargar_datos_dia(dia_seleccionado):
         df_lleg_bruto = pd.read_excel('lleg_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
         df_sal_bruto = pd.read_excel('sal_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
         
-        # Se limpian los dataframes aislando únicamente los vuelos reales
         df_lleg = limpiar_datos(df_lleg_bruto, 'adep')
         df_sal = limpiar_datos(df_sal_bruto, 'ades')
         return df_lleg, df_sal

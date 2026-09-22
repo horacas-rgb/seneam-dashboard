@@ -169,8 +169,18 @@ with col_mapa:
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
     
     # --- Añadir Waypoints Destacados ---
-    waypoints_destacados = ['VOMAR', 'XUDUN', 'NOSAT', 'PAULE', 'SIGMA']
-    for wp in waypoints_destacados:
+    waypoints_cyan = ['VOMAR', 'XUDUN', 'NOSAT', 'PAULE', 'SIGMA']
+    waypoints_blancos = [
+        'URTEL', 'MATOL', 'CTM', 'DUTNA', 'DUTRO', 'GOTAS', 'ILUBA', 'IRDOV', 
+        'KEHLI', 'LIDAM', 'MMCZ', 'MMMD', 'MMTG', 'MMVA', 'MZBZ', 'PISAD', 
+        'IPSEV', 'MMTL', 'NOREL', 'OMPAN', 'AMIDA', 'ERDAM', 'MYDIA', 'UDGUV', 
+        'KNOST', 'UBVOV', 'CAMJO', 'NOTEN', 'NUDAL', 'TAKUX'
+    ]
+    
+    # Unificar la lista para iterar, asignando color de texto
+    todos_waypoints = [(wp, '#00FFFF') for wp in waypoints_cyan] + [(wp, '#FFFFFF') for wp in waypoints_blancos]
+    
+    for wp, txt_color in todos_waypoints:
         if wp in COORDENADAS:
             lat, lon = COORDENADAS[wp]
             # Añadir el triángulo negro usando DivIcon con HTML
@@ -179,9 +189,9 @@ with col_mapa:
             )
             folium.Marker(location=[lat, lon], icon=icono_triangulo).add_to(m)
             
-            # Añadir el nombre del waypoint con tipografía de mapa (gris oscuro o negro, sans-serif)
+            # Añadir el nombre del waypoint con tipografía de mapa y el color asignado
             icono_texto = folium.DivIcon(
-                html=f'<div style="font-family: \'Helvetica Neue\', Arial, Helvetica, sans-serif; font-size: 10px; font-weight: bold; color: #333333; transform: translate(-50%, 8px); white-space: nowrap;">{wp}</div>'
+                html=f'<div style="font-family: \'Helvetica Neue\', Arial, Helvetica, sans-serif; font-size: 10px; font-weight: bold; color: {txt_color}; text-shadow: 1px 1px 2px black; transform: translate(-50%, 8px); white-space: nowrap;">{wp}</div>'
             )
             folium.Marker(location=[lat, lon], icon=icono_texto).add_to(m)
 

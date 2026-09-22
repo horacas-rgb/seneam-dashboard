@@ -166,30 +166,45 @@ with col_mapa:
             trayectoria = extract_trajectory(row['route'], row.get('adep', ''), row.get('ades', ''), is_arrival=False)
             if len(trayectoria) > 1: folium.PolyLine(locations=trayectoria, color="#FF0000", weight=1.5, opacity=0.4).add_to(m)
                 
+    # Marcador central del Aeropuerto MMUN
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
     
-    # --- Añadir Waypoints Destacados ---
+    # --- Añadir Waypoints Dinámicos ---
     waypoints_cyan = ['VOMAR', 'XUDUN', 'NOSAT', 'PAULE', 'SIGMA']
-    waypoints_blancos = [
-        'URTEL', 'MATOL', 'CTM', 'DUTNA', 'DUTRO', 'GOTAS', 'ILUBA', 'IRDOV', 
-        'KEHLI', 'LIDAM', 'MMCZ', 'MMMD', 'MMTG', 'MMVA', 'MZBZ', 'PISAD', 
-        'IPSEV', 'MMTL', 'NOREL', 'OMPAN', 'AMIDA', 'ERDAM', 'MYDIA', 'UDGUV', 
-        'KNOST', 'UBVOV', 'CAMJO', 'NOTEN', 'NUDAL', 'TAKUX'
-    ]
     
-    # Unificar la lista para iterar, asignando color de texto
-    todos_waypoints = [(wp, '#00FFFF') for wp in waypoints_cyan] + [(wp, '#FFFFFF') for wp in waypoints_blancos]
+    if flujo == "Llegadas":
+        waypoints_activos = [
+            'VOMAR', 'URTEL', 'MATOL', 'NOSAT', 'CTM', 'DUTNA', 'DUTRO', 'GOTAS', 
+            'ILUBA', 'IRDOV', 'KEHLI', 'LIDAM', 'MMCM', 'MMCZ', 'MMMD', 'MMTG', 
+            'MMVA', 'MZBZ', 'PISAD', 'IPSEV', 'MMTL', 'NOREL', 'OMPAN', 'XUDUN', 
+            'AMIDA', 'ERDAM', 'UBVOV', 'PAULE'
+        ]
+    elif flujo == "Salidas":
+        waypoints_activos = [
+            'KEHLI', 'MMCZ', 'MMMD', 'IPSEV', 'MYDIA', 'UDGUV', 'KNOST', 
+            'UBVOV', 'NOTEN', 'NUDAL', 'TAKUX'
+        ]
+    else:
+        waypoints_activos = [
+            'VOMAR', 'XUDUN', 'NOSAT', 'PAULE', 'SIGMA', 'URTEL', 'MATOL', 'CTM', 
+            'DUTNA', 'DUTRO', 'GOTAS', 'ILUBA', 'IRDOV', 'KEHLI', 'LIDAM', 'MMCM', 
+            'MMCZ', 'MMMD', 'MMTG', 'MMVA', 'MZBZ', 'PISAD', 'IPSEV', 'MMTL', 
+            'NOREL', 'OMPAN', 'AMIDA', 'ERDAM', 'MYDIA', 'UDGUV', 'KNOST', 'UBVOV', 
+            'CAMJO', 'NOTEN', 'NUDAL', 'TAKUX'
+        ]
     
-    for wp, txt_color in todos_waypoints:
+    for wp in waypoints_activos:
         if wp in COORDENADAS:
             lat, lon = COORDENADAS[wp]
-            # Añadir el triángulo gris claro usando DivIcon con HTML
+            txt_color = '#00FFFF' if wp in waypoints_cyan else '#FFFFFF'
+            
+            # Añadir el triángulo gris claro
             icono_triangulo = folium.DivIcon(
                 html=f'<div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid #D3D3D3; transform: translate(-50%, -50%);"></div>'
             )
             folium.Marker(location=[lat, lon], icon=icono_triangulo).add_to(m)
             
-            # Añadir el nombre del waypoint con tipografía de mapa y el color asignado
+            # Añadir el texto
             icono_texto = folium.DivIcon(
                 html=f'<div style="font-family: \'Helvetica Neue\', Arial, Helvetica, sans-serif; font-size: 10px; font-weight: bold; color: {txt_color}; text-shadow: 1px 1px 2px black; transform: translate(-50%, 8px); white-space: nowrap;">{wp}</div>'
             )

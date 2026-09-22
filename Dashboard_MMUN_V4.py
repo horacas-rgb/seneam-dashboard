@@ -183,9 +183,9 @@ with col_mapa:
     for wp, txt_color in todos_waypoints:
         if wp in COORDENADAS:
             lat, lon = COORDENADAS[wp]
-            # Añadir el triángulo negro usando DivIcon con HTML
+            # Añadir el triángulo gris claro usando DivIcon con HTML
             icono_triangulo = folium.DivIcon(
-                html=f'<div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid black; transform: translate(-50%, -50%);"></div>'
+                html=f'<div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid #D3D3D3; transform: translate(-50%, -50%);"></div>'
             )
             folium.Marker(location=[lat, lon], icon=icono_triangulo).add_to(m)
             

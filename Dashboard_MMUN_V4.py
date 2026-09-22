@@ -73,7 +73,8 @@ COORDENADAS = {
         'CAMJO': (30.5088, -82.6863),
         'NOTEN': (23.2852, -94.6258),
         'NUDAL': (21.2633, -85.6203),
-        'TAKUX': (20.0270, -85.8960)
+        'TAKUX': (20.0270, -85.8960),
+        'PAULE': (19.4655, -87.2434)
 }
 
 def parse_coord(coord_str):
@@ -167,4 +168,21 @@ with col_mapa:
                 
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
     
+    # --- Añadir Waypoints Destacados ---
+    waypoints_destacados = ['VOMAR', 'XUDUN', 'NOSAT', 'PAULE', 'SIGMA']
+    for wp in waypoints_destacados:
+        if wp in COORDENADAS:
+            lat, lon = COORDENADAS[wp]
+            # Añadir el triángulo negro usando DivIcon con HTML
+            icono_triangulo = folium.DivIcon(
+                html=f'<div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid black; transform: translate(-50%, -50%);"></div>'
+            )
+            folium.Marker(location=[lat, lon], icon=icono_triangulo).add_to(m)
+            
+            # Añadir el nombre del waypoint con tipografía de mapa (gris oscuro o negro, sans-serif)
+            icono_texto = folium.DivIcon(
+                html=f'<div style="font-family: \'Helvetica Neue\', Arial, Helvetica, sans-serif; font-size: 10px; font-weight: bold; color: #333333; transform: translate(-50%, 8px); white-space: nowrap;">{wp}</div>'
+            )
+            folium.Marker(location=[lat, lon], icon=icono_texto).add_to(m)
+
     st_folium(m, width=900, height=600)

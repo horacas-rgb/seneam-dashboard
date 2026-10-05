@@ -4,8 +4,10 @@ import folium
 from streamlit_folium import st_folium
 import re
 import base64
+import glob
+import os
 
-st.set_page_config(page_title="Dashboard Ejecutivo ATFM - SENEAM V6", page_icon="Seneam_Logo.png", layout="wide")
+st.set_page_config(page_title="Dashboard Ejecutivo ATFM - SENEAM", page_icon="Seneam_Logo.png", layout="wide")
 
 def get_base64_of_bin_file(bin_file):
     try:
@@ -31,8 +33,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Título dinámico sin el mes fijo codificado
 st.markdown(f"<h1>{logo_html} Análisis Dinámico de Rutas RNAV/PBN - MMUN</h1>", unsafe_allow_html=True)
-st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Periodo:** 2026")
+st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas)")
 st.markdown("<hr style='border: 1px solid #00FFFF;'>", unsafe_allow_html=True)
 
 COORDENADAS = {
@@ -108,11 +111,11 @@ def limpiar_datos(df, columna_filtro):
         return df[df[columna_filtro].apply(lambda x: isinstance(x, str) and len(str(x)) == 4)]
     return pd.DataFrame()
 
-@st.cache_data
-def cargar_datos_dia(dia_seleccionado):
+@st.cache_data(show_spinner=False)
+def cargar_datos_dia(archivo_lleg, archivo_sal, dia_seleccionado):
     try:
-        df_lleg_bruto = pd.read_excel('lleg_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
-        df_sal_bruto = pd.read_excel('sal_MMUN_sept_2026.xlsx', sheet_name=dia_seleccionado)
+        df_lleg_bruto = pd.read_excel(archivo_lleg, sheet_name=dia_seleccionado)
+        df_sal_bruto = pd.read_excel(archivo_sal, sheet_name=dia_seleccionado)
         
         df_lleg = limpiar_datos(df_lleg_bruto, 'adep')
         df_sal = limpiar_datos(df_sal_bruto, 'ades')
@@ -120,22 +123,45 @@ def cargar_datos_dia(dia_seleccionado):
     except Exception as e:
         return None, None
 
-try:
-    xls = pd.ExcelFile('lleg_MMUN_sept_2026.xlsx')
-    dias_disponibles = [hoja for hoja in xls.sheet_names if hoja.startswith('2026-')]
-except:
-    st.error("Archivos Excel no encontrados.")
+# 1. ESCANEO DINÁMICO DE ARCHIVOS EN LA CARPETA
+archivos_llegadas = glob.glob('lleg_MMUN_*.xlsx')
+meses_disponibles = [f.replace('lleg_MMUN_', '').replace('.xlsx', '') for f in archivos_llegadas]
+
+if not meses_disponibles:
+    st.error("No se encontraron bases de datos. Nombra tus archivos como 'lleg_MMUN_mes_año.xlsx'.")
     st.stop()
 
 col_filtros, col_mapa = st.columns([1, 3])
 
 with col_filtros:
     st.markdown("<h2 style='color: #FFFFFF;'>Filtros Operativos</h2>", unsafe_allow_html=True)
-    dia_seleccionado = st.selectbox("Seleccione el Día:", dias_disponibles)
+    
+    # 2. SELECCIÓN DE MES
+    mes_seleccionado = st.selectbox("Seleccione el Mes/Año:", sorted(meses_disponibles, reverse=True))
+    
+    archivo_lleg_actual = f'lleg_MMUN_{mes_seleccionado}.xlsx'
+    archivo_sal_actual = f'sal_MMUN_{mes_seleccionado}.xlsx'
+    
+    # 3. EXTRAER DÍAS (PESTAÑAS) DEL MES SELECCIONADO
+    try:
+        xls = pd.ExcelFile(archivo_lleg_actual)
+        dias_disponibles = [hoja for hoja in xls.sheet_names if re.match(r'20\d{2}-', hoja)]
+    except:
+        st.error(f"Error al leer el archivo {archivo_lleg_actual}. Verifica que no esté corrupto.")
+        st.stop()
+        
+    if not dias_disponibles:
+        st.warning("No se encontraron hojas con formato de fecha (YYYY-MM-DD) en este archivo.")
+        st.stop()
+
+    # 4. SELECCIÓN DE DÍA Y FLUJO
+    dia_seleccionado = st.selectbox("Seleccione el Día:", sorted(dias_disponibles, reverse=True))
     flujo = st.radio("Flujo de Tránsito:", ["Llegadas", "Salidas", "Llegadas y Salidas"])
     
-    df_lleg, df_sal = cargar_datos_dia(dia_seleccionado)
-    if df_lleg is None: st.stop()
+    df_lleg, df_sal = cargar_datos_dia(archivo_lleg_actual, archivo_sal_actual, dia_seleccionado)
+    if df_lleg is None: 
+        st.error("No se pudo cargar la información operativa para este día.")
+        st.stop()
         
     total_llegadas = len(df_lleg)
     total_salidas = len(df_sal)
@@ -166,48 +192,6 @@ with col_mapa:
             trayectoria = extract_trajectory(row['route'], row.get('adep', ''), row.get('ades', ''), is_arrival=False)
             if len(trayectoria) > 1: folium.PolyLine(locations=trayectoria, color="#FF0000", weight=1.5, opacity=0.4).add_to(m)
                 
-    # Marcador central del Aeropuerto MMUN
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
     
-    # --- Añadir Waypoints Dinámicos ---
-    waypoints_cyan = ['VOMAR', 'XUDUN', 'NOSAT', 'PAULE', 'SIGMA']
-    
-    if flujo == "Llegadas":
-        waypoints_activos = [
-            'VOMAR', 'URTEL', 'MATOL', 'NOSAT', 'CTM', 'DUTNA', 'DUTRO', 'GOTAS', 
-            'ILUBA', 'IRDOV', 'KEHLI', 'LIDAM', 'MMCM', 'MMCZ', 'MMMD', 'MMTG', 
-            'MMVA', 'MZBZ', 'PISAD', 'IPSEV', 'MMTL', 'NOREL', 'OMPAN', 'XUDUN', 
-            'AMIDA', 'ERDAM', 'UBVOV', 'PAULE'
-        ]
-    elif flujo == "Salidas":
-        waypoints_activos = [
-            'KEHLI', 'MMCZ', 'MMMD', 'IPSEV', 'MYDIA', 'UDGUV', 'KNOST', 
-            'UBVOV', 'NOTEN', 'NUDAL', 'TAKUX'
-        ]
-    else:
-        waypoints_activos = [
-            'VOMAR', 'XUDUN', 'NOSAT', 'PAULE', 'SIGMA', 'URTEL', 'MATOL', 'CTM', 
-            'DUTNA', 'DUTRO', 'GOTAS', 'ILUBA', 'IRDOV', 'KEHLI', 'LIDAM', 'MMCM', 
-            'MMCZ', 'MMMD', 'MMTG', 'MMVA', 'MZBZ', 'PISAD', 'IPSEV', 'MMTL', 
-            'NOREL', 'OMPAN', 'AMIDA', 'ERDAM', 'MYDIA', 'UDGUV', 'KNOST', 'UBVOV', 
-            'CAMJO', 'NOTEN', 'NUDAL', 'TAKUX'
-        ]
-    
-    for wp in waypoints_activos:
-        if wp in COORDENADAS:
-            lat, lon = COORDENADAS[wp]
-            txt_color = '#00FFFF' if wp in waypoints_cyan else '#FFFFFF'
-            
-            # Añadir el triángulo gris claro
-            icono_triangulo = folium.DivIcon(
-                html=f'<div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid #D3D3D3; transform: translate(-50%, -50%);"></div>'
-            )
-            folium.Marker(location=[lat, lon], icon=icono_triangulo).add_to(m)
-            
-            # Añadir el texto
-            icono_texto = folium.DivIcon(
-                html=f'<div style="font-family: \'Helvetica Neue\', Arial, Helvetica, sans-serif; font-size: 10px; font-weight: bold; color: {txt_color}; text-shadow: 1px 1px 2px black; transform: translate(-50%, 8px); white-space: nowrap;">{wp}</div>'
-            )
-            folium.Marker(location=[lat, lon], icon=icono_texto).add_to(m)
-
     st_folium(m, width=900, height=600)

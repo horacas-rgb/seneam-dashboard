@@ -32,7 +32,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown(f"<h1>{logo_html} Análisis Dinámico de Rutas RNAV/PBN - MMUN</h1>", unsafe_allow_html=True)
-st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Periodo:** Septiembre 2026")
+st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Periodo:** 2026")
 st.markdown("<hr style='border: 1px solid #00FFFF;'>", unsafe_allow_html=True)
 
 COORDENADAS = {

@@ -115,12 +115,14 @@ def generar_grafica_operaciones(df_lleg, df_sal, flujo, dia_seleccionado):
         fig = px.bar(df_final, x='Hora_Etiqueta', y='Operaciones', color='Tipo', barmode='group',
                      title=f"Volumen Operativo por Hora - MMUN ({dia_seleccionado})",
                      color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'})
-        fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color='white', xaxis_title="Hora (UTC)")
+        # Se forzó el color del título a blanco con title_font
+        fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+                          font_color='white', title_font=dict(color='white', size=18), 
+                          xaxis_title="Hora (UTC)")
         return fig
     except: return None
 
 def agrupar_datos(df_lleg, df_sal, flujo, col_l, col_s, nom, top_n=None, substr=None):
-    """Función para extraer cualquier métrica de los Excel (Sectores, Flota, etc.)"""
     datos = []
     if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty and col_l in df_lleg.columns:
         d = df_lleg[[col_l]].copy(); d.columns = [nom]; d['Tipo'] = 'Llegadas'
@@ -142,7 +144,10 @@ def generar_grafica_barras(df_res, x_col, titulo):
     if df_res is None or df_res.empty: return None
     fig = px.bar(df_res, x=x_col, y='Operaciones', color='Tipo', barmode='group', title=titulo,
                  color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'})
-    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color='white', margin=dict(t=40, b=10))
+    # Se forzó el color del título a blanco
+    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+                      font_color='white', title_font=dict(color='white', size=16), 
+                      margin=dict(t=50, b=10))
     return fig
 
 # ===================== INTERFAZ PRINCIPAL =====================
@@ -207,23 +212,34 @@ if fig_hora: st.plotly_chart(fig_hora, use_container_width=True)
 col_graf_1, col_graf_2 = st.columns(2)
 
 with col_graf_1:
-    # 1. Gráfica de Sectores
     df_sec = agrupar_datos(df_lleg, df_sal, flujo, 'entry_sector', 'Sector_resuelto', 'Sector')
     fig_sec = generar_grafica_barras(df_sec, 'Sector', "Carga por Sector de Control")
     if fig_sec: st.plotly_chart(fig_sec, use_container_width=True)
         
-    # 2. Gráfica de Aerolíneas (Extrayendo código de 3 letras)
-    df_cia = agrupar_datos(df_lleg, df_sal, flujo, 'callsign', 'callsign', 'Aerolínea (OACI)', top_n=10, substr=3)
-    fig_cia = generar_grafica_barras(df_cia, 'Aerolínea (OACI)', "Top 10 Aerolíneas (Volumen)")
+    df_cia = agrupar_datos(df_lleg, df_sal, flujo, 'callsign', 'callsign', 'Aerolínea', top_n=10, substr=3)
+    fig_cia = generar_grafica_barras(df_cia, 'Aerolínea', "Top 10 Aerolíneas (Volumen)")
     if fig_cia: st.plotly_chart(fig_cia, use_container_width=True)
+    
+    # NUEVO: Gráfica de Niveles de Vuelo
+    df_nivel = agrupar_datos(df_lleg, df_sal, flujo, 'rfl', 'rfl', 'Nivel de Vuelo (RFL)', top_n=10)
+    fig_nivel = generar_grafica_barras(df_nivel, 'Nivel de Vuelo (RFL)', "Top 10 Niveles de Vuelo (RFL)")
+    if fig_nivel: st.plotly_chart(fig_nivel, use_container_width=True)
+    
+    # NUEVO: Gráfica de Estela Turbulenta
+    df_wtc = agrupar_datos(df_lleg, df_sal, flujo, 'wtc', 'wtc', 'Estela Turbulenta')
+    fig_wtc = generar_grafica_barras(df_wtc, 'Estela Turbulenta', "Categoría de Estela Turbulenta (WTC)")
+    if fig_wtc: st.plotly_chart(fig_wtc, use_container_width=True)
 
 with col_graf_2:
-    # 3. Gráfica de Mix de Flota
     df_flota = agrupar_datos(df_lleg, df_sal, flujo, 'aircraft_type', 'aircraft_type', 'Aeronave', top_n=10)
     fig_flota = generar_grafica_barras(df_flota, 'Aeronave', "Mix de Flota (Top 10 Aeronaves)")
     if fig_flota: st.plotly_chart(fig_flota, use_container_width=True)
         
-    # 4. Gráfica de Pistas
     df_pista = agrupar_datos(df_lleg, df_sal, flujo, 'arr_runway', 'dep_runway', 'Pista', top_n=3)
     fig_pista = generar_grafica_barras(df_pista, 'Pista', "Configuración de Pistas en Uso")
     if fig_pista: st.plotly_chart(fig_pista, use_container_width=True)
+        
+    # NUEVO: Gráfica de Puntos de Transferencia
+    df_punto = agrupar_datos(df_lleg, df_sal, flujo, 'entry_point', 'exit_point', 'Fijo de Ruta', top_n=10)
+    fig_punto = generar_grafica_barras(df_punto, 'Fijo de Ruta', "Puntos de Transferencia (Top 10 Fijos)")
+    if fig_punto: st.plotly_chart(fig_punto, use_container_width=True)

@@ -4,7 +4,7 @@ import folium
 from streamlit_folium import st_folium
 import re
 import base64
-import plotly.express as px # LIBRERÍA NUEVA PARA LAS GRÁFICAS
+import plotly.express as px
 
 st.set_page_config(page_title="Dashboard Ejecutivo ATFM - SENEAM V6", page_icon="Seneam_Logo.png", layout="wide")
 
@@ -19,15 +19,9 @@ logo_html = f'<img src="data:image/png;base64,{img_base64}" style="height: 60px;
 
 st.markdown("""
     <style>
-    /* Forzar fondo oscuro absoluto contra el Modo Claro del sistema operativo */
-    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-        background-color: #0c2340 !important;
-    }
-    
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { background-color: #0c2340 !important; }
     h1 {color: #FFFFFF !important; font-family: 'Helvetica Neue', sans-serif; display: flex; align-items: center;}
     p, .stSelectbox label p, .stRadio label p, div[role="radiogroup"] label div {color: #FFFFFF !important; font-weight: bold;}
-    
-    /* Mantener el texto oscuro dentro de las cajas de selección para que sea legible */
     div[data-baseweb="select"] span {color: #000000 !important;}
     </style>
 """, unsafe_allow_html=True)
@@ -37,8 +31,7 @@ st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Arch
 st.markdown("<hr style='border: 1px solid #00FFFF;'>", unsafe_allow_html=True)
 
 COORDENADAS = {
-    'CUN': (21.036667, -86.876944),
-    'MMUN': (21.036667, -86.876944),
+    'CUN': (21.036667, -86.876944), 'MMUN': (21.036667, -86.876944),
     'VOMAR': (22.0833, -87.8833), 'URTEL': (22.3833, -88.5833), 'MATOL': (22.7500, -89.4667),
     'NOSAT': (21.4667, -86.3167), 'CTM': (18.5092, -88.3336), 'DUTNA': (24.5000, -91.3347),
     'DUTRO': (28.8308, -106.9019), 'GOTAS': (19.2944, -95.0577), 'ILUBA': (20.1894, -85.3413),
@@ -82,7 +75,7 @@ def extract_trajectory(route_string, adep, ades, is_arrival):
 
 def limpiar_datos(df, columna_filtro):
     if df is not None and not df.empty and columna_filtro in df.columns:
-        return df[df[columna_filtro].apply(lambda x: isinstance(x, str) and len(str(x)) == 4)]
+        return df[df[columna_filtro].apply(lambda x: isinstance(x, str) and len(str(x)) == 4)].copy()
     return pd.DataFrame()
 
 @st.cache_data
@@ -90,75 +83,78 @@ def obtener_dias_disponibles(archivo):
     try:
         xls = pd.ExcelFile(archivo)
         return [hoja for hoja in xls.sheet_names if hoja.startswith('2026-')]
-    except Exception:
-        return []
+    except Exception: return []
 
 @st.cache_data
 def cargar_datos_dia(archivo_lleg, archivo_sal, dia_seleccionado):
     try:
-        df_lleg_bruto = pd.read_excel(archivo_lleg, sheet_name=dia_seleccionado)
-        df_sal_bruto = pd.read_excel(archivo_sal, sheet_name=dia_seleccionado)
-        
-        df_lleg = limpiar_datos(df_lleg_bruto, 'adep')
-        df_sal = limpiar_datos(df_sal_bruto, 'ades')
+        df_lleg = limpiar_datos(pd.read_excel(archivo_lleg, sheet_name=dia_seleccionado), 'adep')
+        df_sal = limpiar_datos(pd.read_excel(archivo_sal, sheet_name=dia_seleccionado), 'ades')
         return df_lleg, df_sal
-    except Exception as e:
-        return None, None
+    except Exception as e: return None, None
 
 def generar_grafica_operaciones(df_lleg, df_sal, flujo, dia_seleccionado):
-    """Genera una gráfica dinámica de volumen por hora basada en la selección actual"""
-    datos = []
-    
-    # Procesar horas de llegadas
-    if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty:
-        df_lleg['Hora'] = pd.to_datetime(df_lleg['ata'], errors='coerce').dt.hour
-        conteos = df_lleg['Hora'].value_counts().sort_index().reset_index()
-        conteos.columns = ['Hora', 'Operaciones']
-        conteos['Tipo'] = 'Llegadas'
-        datos.append(conteos)
-        
-    # Procesar horas de salidas
-    if flujo in ["Salidas", "Llegadas y Salidas"] and df_sal is not None and not df_sal.empty:
-        df_sal['Hora'] = pd.to_datetime(df_sal.get('atd', df_sal.get('ata')), errors='coerce').dt.hour
-        conteos = df_sal['Hora'].value_counts().sort_index().reset_index()
-        conteos.columns = ['Hora', 'Operaciones']
-        conteos['Tipo'] = 'Salidas'
-        datos.append(conteos)
-        
-    if datos:
+    try:
+        datos = []
+        if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty:
+            df_lleg['Hora'] = pd.to_datetime(df_lleg['ata'], errors='coerce').dt.hour
+            c = df_lleg['Hora'].value_counts().sort_index().reset_index()
+            c.columns, c['Tipo'] = ['Hora', 'Operaciones'], 'Llegadas'
+            datos.append(c)
+            
+        if flujo in ["Salidas", "Llegadas y Salidas"] and df_sal is not None and not df_sal.empty:
+            df_sal['Hora'] = pd.to_datetime(df_sal.get('atd', df_sal.get('ata')), errors='coerce').dt.hour
+            c = df_sal['Hora'].value_counts().sort_index().reset_index()
+            c.columns, c['Tipo'] = ['Hora', 'Operaciones'], 'Salidas'
+            datos.append(c)
+            
+        if not datos: return None
         df_final = pd.concat(datos).dropna(subset=['Hora'])
         df_final['Hora_Etiqueta'] = df_final['Hora'].astype(int).astype(str).str.zfill(2) + ":00"
         
-        fig = px.bar(
-            df_final, x='Hora_Etiqueta', y='Operaciones', color='Tipo', barmode='group',
-            title=f"Volumen Operativo por Hora - MMUN ({dia_seleccionado})",
-            color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'}
-        )
-        fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            font_color='white', xaxis_title="Hora (UTC)", yaxis_title="Número de Vuelos",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
+        fig = px.bar(df_final, x='Hora_Etiqueta', y='Operaciones', color='Tipo', barmode='group',
+                     title=f"Volumen Operativo por Hora - MMUN ({dia_seleccionado})",
+                     color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'})
+        fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color='white', xaxis_title="Hora (UTC)")
         return fig
-    return None
+    except: return None
+
+def agrupar_datos(df_lleg, df_sal, flujo, col_l, col_s, nom, top_n=None, substr=None):
+    """Función para extraer cualquier métrica de los Excel (Sectores, Flota, etc.)"""
+    datos = []
+    if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty and col_l in df_lleg.columns:
+        d = df_lleg[[col_l]].copy(); d.columns = [nom]; d['Tipo'] = 'Llegadas'
+        datos.append(d)
+    if flujo in ["Salidas", "Llegadas y Salidas"] and df_sal is not None and not df_sal.empty and col_s in df_sal.columns:
+        d = df_sal[[col_s]].copy(); d.columns = [nom]; d['Tipo'] = 'Salidas'
+        datos.append(d)
+    if not datos: return None
+    
+    df_f = pd.concat(datos)
+    df_f[nom] = df_f[nom].astype(str).str.strip()
+    if substr: df_f[nom] = df_f[nom].str[:substr]
+    if top_n:
+        top = df_f[nom].value_counts().head(top_n).index
+        df_f = df_f[df_f[nom].isin(top)]
+    return df_f.groupby([nom, 'Tipo']).size().reset_index(name='Operaciones')
+
+def generar_grafica_barras(df_res, x_col, titulo):
+    if df_res is None or df_res.empty: return None
+    fig = px.bar(df_res, x=x_col, y='Operaciones', color='Tipo', barmode='group', title=titulo,
+                 color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'})
+    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color='white', margin=dict(t=40, b=10))
+    return fig
 
 # ===================== INTERFAZ PRINCIPAL =====================
 col_filtros, col_mapa = st.columns([1, 3])
 
 with col_filtros:
     st.markdown("<h2 style='color: #FFFFFF;'>Filtros Operativos</h2>", unsafe_allow_html=True)
-    
-    # 1. Selección de Mes y ruteo automático del archivo MASTER correspondiente
     mes_seleccionado = st.selectbox("Seleccione el Mes:", ["Septiembre", "Octubre"])
     
-    if mes_seleccionado == "Septiembre":
-        arch_lleg = 'lleg_MMUN_sept_2026_MASTER.xlsx'
-        arch_sal = 'sal_MMUN_sept_2026_MASTER.xlsx'
-    else:
-        arch_lleg = 'lleg_MMUN_oct_2026_MASTER.xlsx'
-        arch_sal = 'sal_MMUN_oct_2026_MASTER.xlsx'
+    arch_lleg = 'lleg_MMUN_sept_2026_MASTER.xlsx' if mes_seleccionado == "Septiembre" else 'lleg_MMUN_oct_2026_MASTER.xlsx'
+    arch_sal = 'sal_MMUN_sept_2026_MASTER.xlsx' if mes_seleccionado == "Septiembre" else 'sal_MMUN_oct_2026_MASTER.xlsx'
         
-    # 2. Selección de Día y Flujo
     dias_disponibles = obtener_dias_disponibles(arch_lleg)
     if not dias_disponibles:
         st.error(f"Archivos de {mes_seleccionado} no encontrados en el repositorio.")
@@ -167,9 +163,10 @@ with col_filtros:
     dia_seleccionado = st.selectbox("Seleccione el Día:", dias_disponibles)
     flujo = st.radio("Flujo de Tránsito:", ["Llegadas", "Salidas", "Llegadas y Salidas"])
     
-    # 3. Cargar Bases de Datos
     df_lleg, df_sal = cargar_datos_dia(arch_lleg, arch_sal, dia_seleccionado)
-    if df_lleg is None: st.stop()
+    if df_lleg is None: 
+        st.error("No se pudieron cargar los datos de Excel.")
+        st.stop()
         
     total_llegadas = len(df_lleg)
     total_salidas = len(df_sal)
@@ -179,14 +176,12 @@ with col_filtros:
         st.info(f"Total de operaciones (Llegadas y Salidas): **{total_llegadas + total_salidas}**")
         st.markdown(f"<p style='color: white;'>- Llegadas: {total_llegadas}</p>", unsafe_allow_html=True)
         st.markdown(f"<p style='color: white;'>- Salidas: {total_salidas}</p>", unsafe_allow_html=True)
-    elif flujo == "Llegadas":
-        st.info(f"Total de Llegadas: **{total_llegadas}**")
-    else:
-        st.info(f"Total de Salidas: **{total_salidas}**")
+    elif flujo == "Llegadas": st.info(f"Total de Llegadas: **{total_llegadas}**")
+    else: st.info(f"Total de Salidas: **{total_salidas}**")
 
 with col_mapa:
     tiles_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
-    attr = 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+    attr = 'Tiles &copy; Esri'
     
     m = folium.Map(location=[21.0366, -86.8770], zoom_start=5, tiles=tiles_url, attr=attr)
     
@@ -201,12 +196,34 @@ with col_mapa:
             if len(trayectoria) > 1: folium.PolyLine(locations=trayectoria, color="#FF0000", weight=1.5, opacity=0.4).add_to(m)
                 
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
-    
-    # 4. Mostrar Mapa
     st_folium(m, width=900, height=600)
-    
-    # 5. Generar y Mostrar Gráfica Dinámica
-    st.markdown("<br><hr style='border: 1px solid #333333;'>", unsafe_allow_html=True)
-    fig = generar_grafica_operaciones(df_lleg, df_sal, flujo, dia_seleccionado)
-    if fig:
-        st.plotly_chart(fig, use_container_width=True)
+
+# ===================== PANEL DE GRÁFICAS DE EXCEL =====================
+st.markdown("<br><h2 style='color: #FFFFFF; text-align: center;'>Panel de Análisis Operativo</h2><hr style='border: 1px solid #333333;'>", unsafe_allow_html=True)
+
+fig_hora = generar_grafica_operaciones(df_lleg, df_sal, flujo, dia_seleccionado)
+if fig_hora: st.plotly_chart(fig_hora, use_container_width=True)
+
+col_graf_1, col_graf_2 = st.columns(2)
+
+with col_graf_1:
+    # 1. Gráfica de Sectores
+    df_sec = agrupar_datos(df_lleg, df_sal, flujo, 'entry_sector', 'Sector_resuelto', 'Sector')
+    fig_sec = generar_grafica_barras(df_sec, 'Sector', "Carga por Sector de Control")
+    if fig_sec: st.plotly_chart(fig_sec, use_container_width=True)
+        
+    # 2. Gráfica de Aerolíneas (Extrayendo código de 3 letras)
+    df_cia = agrupar_datos(df_lleg, df_sal, flujo, 'callsign', 'callsign', 'Aerolínea (OACI)', top_n=10, substr=3)
+    fig_cia = generar_grafica_barras(df_cia, 'Aerolínea (OACI)', "Top 10 Aerolíneas (Volumen)")
+    if fig_cia: st.plotly_chart(fig_cia, use_container_width=True)
+
+with col_graf_2:
+    # 3. Gráfica de Mix de Flota
+    df_flota = agrupar_datos(df_lleg, df_sal, flujo, 'aircraft_type', 'aircraft_type', 'Aeronave', top_n=10)
+    fig_flota = generar_grafica_barras(df_flota, 'Aeronave', "Mix de Flota (Top 10 Aeronaves)")
+    if fig_flota: st.plotly_chart(fig_flota, use_container_width=True)
+        
+    # 4. Gráfica de Pistas
+    df_pista = agrupar_datos(df_lleg, df_sal, flujo, 'arr_runway', 'dep_runway', 'Pista', top_n=3)
+    fig_pista = generar_grafica_barras(df_pista, 'Pista', "Configuración de Pistas en Uso")
+    if fig_pista: st.plotly_chart(fig_pista, use_container_width=True)

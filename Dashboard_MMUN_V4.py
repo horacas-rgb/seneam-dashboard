@@ -78,7 +78,6 @@ def limpiar_datos(df, columna_filtro):
         return df[df[columna_filtro].apply(lambda x: isinstance(x, str) and len(str(x)) == 4)].copy()
     return pd.DataFrame()
 
-@st.cache_data
 def obtener_dias_disponibles(archivo):
     try:
         xls = pd.ExcelFile(archivo)

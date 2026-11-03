@@ -4,7 +4,7 @@ import base64
 import pandas as pd
 import streamlit as st
 import folium
-from streamlit_folium import st_folium
+from streamlit_folium import folium_static
 import plotly.express as px
 
 # Configuración de página
@@ -35,7 +35,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown(f"<h1>{logo_html} Análisis Dinámico de Trayectorias de Vuelo - Cancún</h1>", unsafe_allow_html=True)
+st.markdown(f"<h1>{logo_html} Análisis Dinámico de Rutas RNAV/PBN - MMUN</h1>", unsafe_allow_html=True)
 st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Archivos MASTER**")
 st.markdown("<hr style='border: 1px solid #00FFFF;'>", unsafe_allow_html=True)
 
@@ -106,7 +106,6 @@ def obtener_dias_disponibles(archivo):
         return []
     try:
         xls = pd.ExcelFile(archivo)
-        # Ordenamos los días cronológicamente para el selector de días
         return sorted([hoja for hoja in xls.sheet_names if hoja.startswith('2026-')])
     except Exception:
         return []
@@ -210,7 +209,6 @@ col_filtros, col_mapa = st.columns([1, 3])
 with col_filtros:
     st.markdown("<h2 style='color: #FFFFFF;'>Filtros Operativos</h2>", unsafe_allow_html=True)
     
-    # Lista ordenada desde el mes más reciente hacia el más antiguo
     meses_disponibles = ["Noviembre", "Octubre", "Septiembre"]
     mes_seleccionado = st.selectbox("Seleccione el Mes:", meses_disponibles)
     
@@ -265,7 +263,8 @@ with col_mapa:
                 
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
     
-    st_folium(m, use_container_width=True, height=550, returned_objects=[])
+    # Renderizado estático compatible con iFrames de Google Sites
+    folium_static(m, width=900, height=550)
 
 # ===================== PANEL DE GRÁFICAS =====================
 st.markdown("<br><h2 style='color: #FFFFFF; text-align: center;'>Panel de Análisis Operativo</h2><hr style='border: 1px solid #333333;'>", unsafe_allow_html=True)

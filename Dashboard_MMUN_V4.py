@@ -35,7 +35,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown(f"<h1>{logo_html} Análisis Dinámico de Rutas RNAV/PBN - MMUN</h1>", unsafe_allow_html=True)
+st.markdown(f"<h1>{logo_html} Análisis Dinámico de Trayectorias de Vuelo - Cancún</h1>", unsafe_allow_html=True)
 st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Archivos MASTER**")
 st.markdown("<hr style='border: 1px solid #00FFFF;'>", unsafe_allow_html=True)
 

@@ -1,18 +1,27 @@
-import streamlit as st
-import pandas as pd
-import folium
-from streamlit_folium import st_folium
+import os
 import re
 import base64
+import pandas as pd
+import streamlit as st
+import folium
+from streamlit_folium import st_folium
 import plotly.express as px
 
-st.set_page_config(page_title="Dashboard Ejecutivo ATFM - SENEAM V6", page_icon="Seneam_Logo.png", layout="wide")
+# Configuración de página
+st.set_page_config(
+    page_title="Dashboard Ejecutivo ATFM - SENEAM V7",
+    page_icon="✈️",
+    layout="wide"
+)
 
 def get_base64_of_bin_file(bin_file):
     try:
-        with open(bin_file, 'rb') as f:
-            return base64.b64encode(f.read()).decode()
-    except: return None
+        if os.path.exists(bin_file):
+            with open(bin_file, 'rb') as f:
+                return base64.b64encode(f.read()).decode()
+    except Exception:
+        pass
+    return None
 
 img_base64 = get_base64_of_bin_file('Seneam_Logo.png')
 logo_html = f'<img src="data:image/png;base64,{img_base64}" style="height: 60px; vertical-align: middle; margin-right: 15px;">' if img_base64 else ""
@@ -48,105 +57,150 @@ COORDENADAS = {
 }
 
 def parse_coord(coord_str):
-    match = re.match(r'^(\d{2})(\d{2})?(N|S)(\d{3})(\d{2})?(E|W)$', coord_str)
+    if not isinstance(coord_str, str):
+        return None
+    match = re.match(r'^(\d{2})(\d{2})?(N|S)(\d{3})(\d{2})?(E|W)$', coord_str.strip())
     if match:
-        lat = float(match.group(1)) + (float(match.group(2)) if match.group(2) else 0)/60.0
+        lat = float(match.group(1)) + (float(match.group(2)) if match.group(2) else 0) / 60.0
         if match.group(3) == 'S': lat = -lat
-        lon = float(match.group(4)) + (float(match.group(5)) if match.group(5) else 0)/60.0
+        lon = float(match.group(4)) + (float(match.group(5)) if match.group(5) else 0) / 60.0
         if match.group(6) == 'W': lon = -lon
         return (lat, lon)
     return None
 
 def extract_trajectory(route_string, adep, ades, is_arrival):
     path = []
-    if is_arrival and adep in COORDENADAS: path.append(COORDENADAS[adep])
-    elif not is_arrival: path.append(COORDENADAS['MMUN'])
+    adep_clean = str(adep).strip().upper() if pd.notna(adep) else ""
+    ades_clean = str(ades).strip().upper() if pd.notna(ades) else ""
+
+    if is_arrival and adep_clean in COORDENADAS:
+        path.append(COORDENADAS[adep_clean])
+    elif not is_arrival:
+        path.append(COORDENADAS['MMUN'])
         
     if pd.notna(route_string):
         words = str(route_string).replace('/', ' ').split()
         for word in words:
-            coord = parse_coord(word)
-            if coord: path.append(coord)
-            elif word in COORDENADAS: path.append(COORDENADAS[word])
+            word_clean = word.strip().upper()
+            coord = parse_coord(word_clean)
+            if coord:
+                path.append(coord)
+            elif word_clean in COORDENADAS:
+                path.append(COORDENADAS[word_clean])
                 
-    if is_arrival: path.append(COORDENADAS['MMUN'])
-    elif not is_arrival and ades in COORDENADAS: path.append(COORDENADAS[ades])
+    if is_arrival:
+        path.append(COORDENADAS['MMUN'])
+    elif not is_arrival and ades_clean in COORDENADAS:
+        path.append(COORDENADAS[ades_clean])
+        
     return path
 
 def limpiar_datos(df, columna_filtro):
     if df is not None and not df.empty and columna_filtro in df.columns:
-        return df[df[columna_filtro].apply(lambda x: isinstance(x, str) and len(str(x)) == 4)].copy()
+        return df[df[columna_filtro].astype(str).str.strip().str.len() == 4].copy()
     return pd.DataFrame()
 
+@st.cache_data(ttl=3600)
 def obtener_dias_disponibles(archivo):
+    if not os.path.exists(archivo):
+        return []
     try:
         xls = pd.ExcelFile(archivo)
         return [hoja for hoja in xls.sheet_names if hoja.startswith('2026-')]
-    except Exception: return []
+    except Exception:
+        return []
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def cargar_datos_dia(archivo_lleg, archivo_sal, dia_seleccionado):
-    try:
-        df_lleg = limpiar_datos(pd.read_excel(archivo_lleg, sheet_name=dia_seleccionado), 'adep')
-        df_sal = limpiar_datos(pd.read_excel(archivo_sal, sheet_name=dia_seleccionado), 'ades')
-        return df_lleg, df_sal
-    except Exception as e: return None, None
+    df_lleg, df_sal = pd.DataFrame(), pd.DataFrame()
+    if os.path.exists(archivo_lleg):
+        try:
+            df_lleg = limpiar_datos(pd.read_excel(archivo_lleg, sheet_name=dia_seleccionado), 'adep')
+        except Exception:
+            pass
+    if os.path.exists(archivo_sal):
+        try:
+            df_sal = limpiar_datos(pd.read_excel(archivo_sal, sheet_name=dia_seleccionado), 'ades')
+        except Exception:
+            pass
+    return df_lleg, df_sal
 
 def generar_grafica_operaciones(df_lleg, df_sal, flujo, dia_seleccionado):
     try:
         datos = []
         if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty:
-            df_lleg['Hora'] = pd.to_datetime(df_lleg['ata'], errors='coerce').dt.hour
-            c = df_lleg['Hora'].value_counts().sort_index().reset_index()
-            c.columns, c['Tipo'] = ['Hora', 'Operaciones'], 'Llegadas'
+            df_lleg_c = df_lleg.copy()
+            df_lleg_c['Hora'] = pd.to_datetime(df_lleg_c['ata'], errors='coerce').dt.hour
+            c = df_lleg_c['Hora'].value_counts().sort_index().reset_index()
+            c.columns = ['Hora', 'Operaciones']
+            c['Tipo'] = 'Llegadas'
             datos.append(c)
             
         if flujo in ["Salidas", "Llegadas y Salidas"] and df_sal is not None and not df_sal.empty:
-            df_sal['Hora'] = pd.to_datetime(df_sal.get('atd', df_sal.get('ata')), errors='coerce').dt.hour
-            c = df_sal['Hora'].value_counts().sort_index().reset_index()
-            c.columns, c['Tipo'] = ['Hora', 'Operaciones'], 'Salidas'
+            df_sal_c = df_sal.copy()
+            col_hora = 'atd' if 'atd' in df_sal_c.columns else 'ata'
+            df_sal_c['Hora'] = pd.to_datetime(df_sal_c[col_hora], errors='coerce').dt.hour
+            c = df_sal_c['Hora'].value_counts().sort_index().reset_index()
+            c.columns = ['Hora', 'Operaciones']
+            c['Tipo'] = 'Salidas'
             datos.append(c)
             
-        if not datos: return None
+        if not datos: 
+            return None
+            
         df_final = pd.concat(datos).dropna(subset=['Hora'])
         df_final['Hora_Etiqueta'] = df_final['Hora'].astype(int).astype(str).str.zfill(2) + ":00"
         
-        fig = px.bar(df_final, x='Hora_Etiqueta', y='Operaciones', color='Tipo', barmode='group',
-                     title=f"Volumen Operativo por Hora - MMUN ({dia_seleccionado})",
-                     color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'})
-        # Se forzó el color del título a blanco con title_font
-        fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                          font_color='white', title_font=dict(color='white', size=18), 
-                          xaxis_title="Hora (UTC)")
+        fig = px.bar(
+            df_final, x='Hora_Etiqueta', y='Operaciones', color='Tipo', barmode='group',
+            title=f"Volumen Operativo por Hora - MMUN ({dia_seleccionado})",
+            color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'}
+        )
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+            font_color='white', title_font=dict(color='white', size=18), 
+            xaxis_title="Hora (UTC)"
+        )
         return fig
-    except: return None
+    except Exception:
+        return None
 
 def agrupar_datos(df_lleg, df_sal, flujo, col_l, col_s, nom, top_n=None, substr=None):
     datos = []
     if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty and col_l in df_lleg.columns:
-        d = df_lleg[[col_l]].copy(); d.columns = [nom]; d['Tipo'] = 'Llegadas'
+        d = df_lleg[[col_l]].dropna().copy()
+        d.columns = [nom]
+        d['Tipo'] = 'Llegadas'
         datos.append(d)
     if flujo in ["Salidas", "Llegadas y Salidas"] and df_sal is not None and not df_sal.empty and col_s in df_sal.columns:
-        d = df_sal[[col_s]].copy(); d.columns = [nom]; d['Tipo'] = 'Salidas'
+        d = df_sal[[col_s]].dropna().copy()
+        d.columns = [nom]
+        d['Tipo'] = 'Salidas'
         datos.append(d)
-    if not datos: return None
+    if not datos: 
+        return None
     
     df_f = pd.concat(datos)
     df_f[nom] = df_f[nom].astype(str).str.strip()
-    if substr: df_f[nom] = df_f[nom].str[:substr]
+    if substr: 
+        df_f[nom] = df_f[nom].str[:substr]
     if top_n:
         top = df_f[nom].value_counts().head(top_n).index
         df_f = df_f[df_f[nom].isin(top)]
     return df_f.groupby([nom, 'Tipo']).size().reset_index(name='Operaciones')
 
 def generar_grafica_barras(df_res, x_col, titulo):
-    if df_res is None or df_res.empty: return None
-    fig = px.bar(df_res, x=x_col, y='Operaciones', color='Tipo', barmode='group', title=titulo,
-                 color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'})
-    # Se forzó el color del título a blanco
-    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                      font_color='white', title_font=dict(color='white', size=16), 
-                      margin=dict(t=50, b=10))
+    if df_res is None or df_res.empty: 
+        return None
+    fig = px.bar(
+        df_res, x=x_col, y='Operaciones', color='Tipo', barmode='group', title=titulo,
+        color_discrete_map={'Llegadas': '#00FFFF', 'Salidas': '#FF0000'}
+    )
+    fig.update_layout(
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+        font_color='white', title_font=dict(color='white', size=16), 
+        margin=dict(t=50, b=10)
+    )
     return fig
 
 # ===================== INTERFAZ PRINCIPAL =====================
@@ -154,59 +208,70 @@ col_filtros, col_mapa = st.columns([1, 3])
 
 with col_filtros:
     st.markdown("<h2 style='color: #FFFFFF;'>Filtros Operativos</h2>", unsafe_allow_html=True)
-    mes_seleccionado = st.selectbox("Seleccione el Mes:", ["Septiembre", "Octubre"])
     
-    arch_lleg = 'lleg_MMUN_sept_2026_MASTER.xlsx' if mes_seleccionado == "Septiembre" else 'lleg_MMUN_oct_2026_MASTER.xlsx'
-    arch_sal = 'sal_MMUN_sept_2026_MASTER.xlsx' if mes_seleccionado == "Septiembre" else 'sal_MMUN_oct_2026_MASTER.xlsx'
+    # 1. Agregado Noviembre al selector
+    mes_seleccionado = st.selectbox("Seleccione el Mes:", ["Septiembre", "Octubre", "Noviembre"])
+    
+    # 2. Asignación de archivos según el mes seleccionado
+    mapa_archivos = {
+        "Septiembre": ('lleg_MMUN_sept_2026_MASTER.xlsx', 'sal_MMUN_sept_2026_MASTER.xlsx'),
+        "Octubre":    ('lleg_MMUN_oct_2026_MASTER.xlsx',  'sal_MMUN_oct_2026_MASTER.xlsx'),
+        "Noviembre":  ('lleg_MMUN_nov_2026_MASTER.xlsx',  'sal_MMUN_nov_2026_MASTER.xlsx')
+    }
+    
+    arch_lleg, arch_sal = mapa_archivos[mes_seleccionado]
         
     dias_disponibles = obtener_dias_disponibles(arch_lleg)
     if not dias_disponibles:
-        st.error(f"Archivos de {mes_seleccionado} no encontrados en el repositorio.")
+        st.error(f"No se encontró el archivo máster '{arch_lleg}' en la raíz del repositorio.")
         st.stop()
         
     dia_seleccionado = st.selectbox("Seleccione el Día:", dias_disponibles)
     flujo = st.radio("Flujo de Tránsito:", ["Llegadas", "Salidas", "Llegadas y Salidas"])
     
     df_lleg, df_sal = cargar_datos_dia(arch_lleg, arch_sal, dia_seleccionado)
-    if df_lleg is None: 
-        st.error("No se pudieron cargar los datos de Excel.")
-        st.stop()
-        
-    total_llegadas = len(df_lleg)
-    total_salidas = len(df_sal)
+    
+    total_llegadas = len(df_lleg) if df_lleg is not None else 0
+    total_salidas = len(df_sal) if df_sal is not None else 0
     
     st.markdown("<h3 style='color: #FFFFFF;'>Resumen Estadístico</h3>", unsafe_allow_html=True)
     if flujo == "Llegadas y Salidas":
-        st.info(f"Total de operaciones (Llegadas y Salidas): **{total_llegadas + total_salidas}**")
+        st.info(f"Total de operaciones: **{total_llegadas + total_salidas}**")
         st.markdown(f"<p style='color: white;'>- Llegadas: {total_llegadas}</p>", unsafe_allow_html=True)
         st.markdown(f"<p style='color: white;'>- Salidas: {total_salidas}</p>", unsafe_allow_html=True)
-    elif flujo == "Llegadas": st.info(f"Total de Llegadas: **{total_llegadas}**")
-    else: st.info(f"Total de Salidas: **{total_salidas}**")
+    elif flujo == "Llegadas": 
+        st.info(f"Total de Llegadas: **{total_llegadas}**")
+    else: 
+        st.info(f"Total de Salidas: **{total_salidas}**")
 
 with col_mapa:
     tiles_url = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
     attr = 'Tiles &copy; Esri'
     
-    m = folium.Map(location=[21.0366, -86.8770], zoom_start=5, tiles=tiles_url, attr=attr)
+    m = folium.Map(location=[21.0366, -86.8770], zoom_start=6, tiles=tiles_url, attr=attr)
     
-    if flujo in ["Llegadas", "Llegadas y Salidas"] and not df_lleg.empty:
+    if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty:
         for _, row in df_lleg.iterrows():
-            trayectoria = extract_trajectory(row['route'], row.get('adep', ''), row.get('ades', ''), is_arrival=True)
-            if len(trayectoria) > 1: folium.PolyLine(locations=trayectoria, color="#00FFFF", weight=1.5, opacity=0.4).add_to(m)
+            trayectoria = extract_trajectory(row.get('route', ''), row.get('adep', ''), row.get('ades', ''), is_arrival=True)
+            if len(trayectoria) > 1: 
+                folium.PolyLine(locations=trayectoria, color="#00FFFF", weight=1.5, opacity=0.4).add_to(m)
                 
-    if flujo in ["Salidas", "Llegadas y Salidas"] and not df_sal.empty:
+    if flujo in ["Salidas", "Llegadas y Salidas"] and df_sal is not None and not df_sal.empty:
         for _, row in df_sal.iterrows():
-            trayectoria = extract_trajectory(row['route'], row.get('adep', ''), row.get('ades', ''), is_arrival=False)
-            if len(trayectoria) > 1: folium.PolyLine(locations=trayectoria, color="#FF0000", weight=1.5, opacity=0.4).add_to(m)
+            trayectoria = extract_trajectory(row.get('route', ''), row.get('adep', ''), row.get('ades', ''), is_arrival=False)
+            if len(trayectoria) > 1: 
+                folium.PolyLine(locations=trayectoria, color="#FF0000", weight=1.5, opacity=0.4).add_to(m)
                 
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
-    st_folium(m, width=900, height=600)
+    
+    st_folium(m, use_container_width=True, height=550, returned_objects=[])
 
-# ===================== PANEL DE GRÁFICAS DE EXCEL =====================
+# ===================== PANEL DE GRÁFICAS =====================
 st.markdown("<br><h2 style='color: #FFFFFF; text-align: center;'>Panel de Análisis Operativo</h2><hr style='border: 1px solid #333333;'>", unsafe_allow_html=True)
 
 fig_hora = generar_grafica_operaciones(df_lleg, df_sal, flujo, dia_seleccionado)
-if fig_hora: st.plotly_chart(fig_hora, use_container_width=True)
+if fig_hora: 
+    st.plotly_chart(fig_hora, use_container_width=True)
 
 col_graf_1, col_graf_2 = st.columns(2)
 
@@ -215,30 +280,4 @@ with col_graf_1:
     fig_sec = generar_grafica_barras(df_sec, 'Sector', "Carga por Sector de Control")
     if fig_sec: st.plotly_chart(fig_sec, use_container_width=True)
         
-    df_cia = agrupar_datos(df_lleg, df_sal, flujo, 'callsign', 'callsign', 'Aerolínea', top_n=10, substr=3)
-    fig_cia = generar_grafica_barras(df_cia, 'Aerolínea', "Top 10 Aerolíneas (Volumen)")
-    if fig_cia: st.plotly_chart(fig_cia, use_container_width=True)
-    
-    # NUEVO: Gráfica de Niveles de Vuelo
-    df_nivel = agrupar_datos(df_lleg, df_sal, flujo, 'rfl', 'rfl', 'Nivel de Vuelo (RFL)', top_n=10)
-    fig_nivel = generar_grafica_barras(df_nivel, 'Nivel de Vuelo (RFL)', "Top 10 Niveles de Vuelo (RFL)")
-    if fig_nivel: st.plotly_chart(fig_nivel, use_container_width=True)
-    
-    # NUEVO: Gráfica de Estela Turbulenta
-    df_wtc = agrupar_datos(df_lleg, df_sal, flujo, 'wtc', 'wtc', 'Estela Turbulenta')
-    fig_wtc = generar_grafica_barras(df_wtc, 'Estela Turbulenta', "Categoría de Estela Turbulenta (WTC)")
-    if fig_wtc: st.plotly_chart(fig_wtc, use_container_width=True)
-
-with col_graf_2:
-    df_flota = agrupar_datos(df_lleg, df_sal, flujo, 'aircraft_type', 'aircraft_type', 'Aeronave', top_n=10)
-    fig_flota = generar_grafica_barras(df_flota, 'Aeronave', "Mix de Flota (Top 10 Aeronaves)")
-    if fig_flota: st.plotly_chart(fig_flota, use_container_width=True)
-        
-    df_pista = agrupar_datos(df_lleg, df_sal, flujo, 'arr_runway', 'dep_runway', 'Pista', top_n=3)
-    fig_pista = generar_grafica_barras(df_pista, 'Pista', "Configuración de Pistas en Uso")
-    if fig_pista: st.plotly_chart(fig_pista, use_container_width=True)
-        
-    # NUEVO: Gráfica de Puntos de Transferencia
-    df_punto = agrupar_datos(df_lleg, df_sal, flujo, 'entry_point', 'exit_point', 'Fijo de Ruta', top_n=10)
-    fig_punto = generar_grafica_barras(df_punto, 'Fijo de Ruta', "Puntos de Transferencia (Top 10 Fijos)")
-    if fig_punto: st.plotly_chart(fig_punto, use_container_width=True)
+    df_cia = agrupar_datos

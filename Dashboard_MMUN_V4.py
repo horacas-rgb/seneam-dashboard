@@ -106,7 +106,8 @@ def obtener_dias_disponibles(archivo):
         return []
     try:
         xls = pd.ExcelFile(archivo)
-        return [hoja for hoja in xls.sheet_names if hoja.startswith('2026-')]
+        # Ordenamos los días cronológicamente para el selector de días
+        return sorted([hoja for hoja in xls.sheet_names if hoja.startswith('2026-')])
     except Exception:
         return []
 
@@ -209,21 +210,21 @@ col_filtros, col_mapa = st.columns([1, 3])
 with col_filtros:
     st.markdown("<h2 style='color: #FFFFFF;'>Filtros Operativos</h2>", unsafe_allow_html=True)
     
-    # 1. Agregado Noviembre al selector
-    mes_seleccionado = st.selectbox("Seleccione el Mes:", ["Septiembre", "Octubre", "Noviembre"])
+    # Lista ordenada desde el mes más reciente hacia el más antiguo
+    meses_disponibles = ["Noviembre", "Octubre", "Septiembre"]
+    mes_seleccionado = st.selectbox("Seleccione el Mes:", meses_disponibles)
     
-    # 2. Asignación de archivos según el mes seleccionado
     mapa_archivos = {
-        "Septiembre": ('lleg_MMUN_sept_2026_MASTER.xlsx', 'sal_MMUN_sept_2026_MASTER.xlsx'),
+        "Noviembre":  ('lleg_MMUN_nov_2026_MASTER.xlsx',  'sal_MMUN_nov_2026_MASTER.xlsx'),
         "Octubre":    ('lleg_MMUN_oct_2026_MASTER.xlsx',  'sal_MMUN_oct_2026_MASTER.xlsx'),
-        "Noviembre":  ('lleg_MMUN_nov_2026_MASTER.xlsx',  'sal_MMUN_nov_2026_MASTER.xlsx')
+        "Septiembre": ('lleg_MMUN_sept_2026_MASTER.xlsx', 'sal_MMUN_sept_2026_MASTER.xlsx')
     }
     
     arch_lleg, arch_sal = mapa_archivos[mes_seleccionado]
         
     dias_disponibles = obtener_dias_disponibles(arch_lleg)
     if not dias_disponibles:
-        st.error(f"No se encontró el archivo máster '{arch_lleg}' en la raíz del repositorio.")
+        st.error(f"No se encontró el archivo máster '{arch_lleg}' en el repositorio.")
         st.stop()
         
     dia_seleccionado = st.selectbox("Seleccione el Día:", dias_disponibles)
@@ -280,4 +281,27 @@ with col_graf_1:
     fig_sec = generar_grafica_barras(df_sec, 'Sector', "Carga por Sector de Control")
     if fig_sec: st.plotly_chart(fig_sec, use_container_width=True)
         
-    df_cia = agrupar_datos
+    df_cia = agrupar_datos(df_lleg, df_sal, flujo, 'callsign', 'callsign', 'Aerolínea', top_n=10, substr=3)
+    fig_cia = generar_grafica_barras(df_cia, 'Aerolínea', "Top 10 Aerolíneas (Volumen)")
+    if fig_cia: st.plotly_chart(fig_cia, use_container_width=True)
+    
+    df_nivel = agrupar_datos(df_lleg, df_sal, flujo, 'rfl', 'rfl', 'Nivel de Vuelo (RFL)', top_n=10)
+    fig_nivel = generar_grafica_barras(df_nivel, 'Nivel de Vuelo (RFL)', "Top 10 Niveles de Vuelo (RFL)")
+    if fig_nivel: st.plotly_chart(fig_nivel, use_container_width=True)
+    
+    df_wtc = agrupar_datos(df_lleg, df_sal, flujo, 'wtc', 'wtc', 'Estela Turbulenta')
+    fig_wtc = generar_grafica_barras(df_wtc, 'Estela Turbulenta', "Categoría de Estela Turbulenta (WTC)")
+    if fig_wtc: st.plotly_chart(fig_wtc, use_container_width=True)
+
+with col_graf_2:
+    df_flota = agrupar_datos(df_lleg, df_sal, flujo, 'aircraft_type', 'aircraft_type', 'Aeronave', top_n=10)
+    fig_flota = generar_grafica_barras(df_flota, 'Aeronave', "Mix de Flota (Top 10 Aeronaves)")
+    if fig_flota: st.plotly_chart(fig_flota, use_container_width=True)
+        
+    df_pista = agrupar_datos(df_lleg, df_sal, flujo, 'arr_runway', 'dep_runway', 'Pista', top_n=3)
+    fig_pista = generar_grafica_barras(df_pista, 'Pista', "Configuración de Pistas en Uso")
+    if fig_pista: st.plotly_chart(fig_pista, use_container_width=True)
+        
+    df_punto = agrupar_datos(df_lleg, df_sal, flujo, 'entry_point', 'exit_point', 'Fijo de Ruta', top_n=10)
+    fig_punto = generar_grafica_barras(df_punto, 'Fijo de Ruta', "Puntos de Transferencia (Top 10 Fijos)")
+    if fig_punto: st.plotly_chart(fig_punto, use_container_width=True)

@@ -36,7 +36,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown(f"<h1>{logo_html} Mapa Dinámico de Trayectorias de Vuelo Aeropuerto de Cancún</h1>", unsafe_allow_html=True)
-st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas) | **Archivos MASTER**")
+st.markdown("**Fuente de Datos:** Registros TopSky (Llegadas y Salidas)")
 st.markdown("<hr style='border: 1px solid #00FFFF;'>", unsafe_allow_html=True)
 
 COORDENADAS = {
@@ -248,6 +248,49 @@ with col_mapa:
     attr = 'Tiles &copy; Esri'
     
     m = folium.Map(location=[21.0366, -86.8770], zoom_start=6, tiles=tiles_url, attr=attr)
+
+    # --- NUEVA CAPA: FRONTERA FÍSICA Y ESPACIO AÉREO SENEAM ---
+    import requests
+    # 1. Obtener el contorno geográfico de México (GeoJSON público)
+    url_geojson = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries/MEX.geo.json"
+    try:
+        mexico_frontera = requests.get(url_geojson).json()
+        folium.GeoJson(
+            mexico_frontera,
+            name="Frontera Física de México",
+            style_function=lambda feature: {
+                'color': '#2c3e50', # Gris oscuro/azulado
+                'weight': 2.5,
+                'fillOpacity': 0.05
+            }
+        ).add_to(m)
+    except Exception as e:
+        st.warning("No se pudo cargar la frontera de México desde GitHub.")
+
+    # 2. Polígonos de SENEAM desde Excel (Coordenadas_Espacio_Aereo_SENEAM_Optimizado.xlsx)
+    if os.path.exists('Coordenadas_Espacio_Aereo_SENEAM_Optimizado.xlsx'):
+        try:
+            xls_seneam = pd.ExcelFile('Coordenadas_Espacio_Aereo_SENEAM_Optimizado.xlsx')
+            for sheet in xls_seneam.sheet_names:
+                # Solo trazar los CTA para no saturar el mapa, o puedes quitar el 'CTA' para trazar todo
+                if 'CTA' in sheet:
+                    df_seneam = pd.read_excel(xls_seneam, sheet_name=sheet)
+                    # Agrupar por Sector
+                    for sector, df_sector in df_seneam.groupby('Área / Sector'):
+                        coords = df_sector[['Latitud (Decimal)', 'Longitud (Decimal)']].dropna().values.tolist()
+                        if len(coords) > 2:
+                            folium.Polygon(
+                                locations=coords,
+                                color='#F39C12', # Naranja para áreas de control
+                                weight=2,
+                                fill=True,
+                                fill_opacity=0.0,
+                                tooltip=sector
+                            ).add_to(m)
+        except Exception as e:
+            st.warning(f"Error al procesar el Excel de SENEAM: {e}")
+    # --------------------------------------------------------
+
     
     if flujo in ["Llegadas", "Llegadas y Salidas"] and df_lleg is not None and not df_lleg.empty:
         for _, row in df_lleg.iterrows():
@@ -264,6 +307,7 @@ with col_mapa:
     folium.CircleMarker(location=[21.0366, -86.8770], radius=5, color="white", fill=True, fill_color="white", popup="MMUN").add_to(m)
     
     # Renderizado estático compatible con iFrames de Google Sites
+    folium.LayerControl().add_to(m)
     folium_static(m, width=900, height=550)
 
 # ===================== PANEL DE GRÁFICAS =====================

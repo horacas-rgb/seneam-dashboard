@@ -28,6 +28,7 @@ if st.session_state.get("reset_search_flag", False):
 def limpiar_busqueda_callback():
     st.session_state["search_callsign_input"] = ""
 
+@st.cache_data(ttl=86400)
 def get_base64_of_bin_file(bin_file):
     try:
         if os.path.exists(bin_file):
@@ -241,7 +242,7 @@ def cargar_datos_dia(archivo_lleg, archivo_sal, dia_seleccionado):
         except Exception: pass
     return df_lleg, df_sal
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def cargar_coordenadas_espacio_aereo(archivo_excel):
     if not os.path.exists(archivo_excel): return {}
     try:
@@ -254,7 +255,7 @@ def cargar_coordenadas_espacio_aereo(archivo_excel):
         return dict_espacio
     except Exception: return {}
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)
 def cargar_waypoints_y_vors(archivo_excel):
     if not os.path.exists(archivo_excel): return pd.DataFrame()
     try:
@@ -285,6 +286,17 @@ def cargar_waypoints_y_vors(archivo_excel):
         df_all['Codigo_3L'] = df_all.apply(obtener_codigo_3_letras, axis=1)
         return df_all.drop_duplicates(subset=['Codigo_3L', 'Latitud', 'Longitud']).reset_index(drop=True)
     except Exception: return pd.DataFrame()
+
+@st.cache_data(ttl=86400)
+def obtener_frontera_mexico():
+    url_geojson = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries/MEX.geo.json"
+    try:
+        response = requests.get(url_geojson, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+    except Exception:
+        pass
+    return None
 
 def obtener_top_10_aerolineas_ordenadas(df_lleg, df_sal, flujo):
     callsigns = []
@@ -409,74 +421,76 @@ m = folium.Map(location=[21.0366, -86.8770], zoom_start=6, tiles=tiles_url, attr
 # -------------------------------------------------------------------------
 # FUSIÓN GEOGRÁFICA (LINESTRING EXACTO POR VECTORES)
 # -------------------------------------------------------------------------
-url_geojson = "https://raw.githubusercontent.com/johan/world.geo.json/master/countries/MEX.geo.json"
+mexico_frontera = obtener_frontera_mexico()
 dict_espacio_procesado = {}
 
 try:
-    mexico_frontera = requests.get(url_geojson).json()
-    coords_fisicas = []
-    for feature in mexico_frontera['features']:
-        geom = feature['geometry']
-        if geom['type'] == 'MultiPolygon':
-            coords_fisicas = max(geom['coordinates'], key=lambda poly: len(poly[0]))[0]
-        elif geom['type'] == 'Polygon':
-            coords_fisicas = geom['coordinates'][0]
+    if mexico_frontera and 'features' in mexico_frontera:
+        coords_fisicas = []
+        for feature in mexico_frontera['features']:
+            geom = feature['geometry']
+            if geom['type'] == 'MultiPolygon':
+                coords_fisicas = max(geom['coordinates'], key=lambda poly: len(poly[0]))[0]
+            elif geom['type'] == 'Polygon':
+                coords_fisicas = geom['coordinates'][0]
 
-    def distance_geo(p1, p2): return ((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)**0.5
-    def find_closest_index(lon, lat, coords): return min(range(len(coords)), key=lambda i: distance_geo(coords[i], [lon, lat]))
+        def distance_geo(p1, p2): return ((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)**0.5
+        def find_closest_index(lon, lat, coords): return min(range(len(coords)), key=lambda i: distance_geo(coords[i], [lon, lat]))
 
-    def get_path_length(indices, coords):
-        return sum(distance_geo(coords[indices[i]], coords[indices[i+1]]) for i in range(len(indices)-1))
+        def get_path_length(indices, coords):
+            return sum(distance_geo(coords[indices[i]], coords[indices[i+1]]) for i in range(len(indices)-1))
 
-    def extract_line_string(idx_start, idx_end, coords):
-        n = len(coords)
-        sf = []; c = idx_start
-        while True:
-            sf.append(c)
-            if c == idx_end or len(sf) > n: break
-            c = (c + 1) % n
-        sb = []; c = idx_start
-        while True:
-            sb.append(c)
-            if c == idx_end or len(sb) > n: break
-            c = (c - 1) % n
-        return [coords[i] for i in (sf if get_path_length(sf, coords) < get_path_length(sb, coords) else sb)]
+        def extract_line_string(idx_start, idx_end, coords):
+            n = len(coords)
+            sf = []; c = idx_start
+            while True:
+                sf.append(c)
+                if c == idx_end or len(sf) > n: break
+                c = (c + 1) % n
+            sb = []; c = idx_start
+            while True:
+                sb.append(c)
+                if c == idx_end or len(sb) > n: break
+                c = (c - 1) % n
+            return [coords[i] for i in (sf if get_path_length(sf, coords) < get_path_length(sb, coords) else sb)]
 
-    idx_tj = find_closest_index(-117.12, 32.53, coords_fisicas)
-    idx_mat = find_closest_index(-97.14, 25.95, coords_fisicas)
-    usa_line = extract_line_string(idx_tj, idx_mat, coords_fisicas)
+        idx_tj = find_closest_index(-117.12, 32.53, coords_fisicas)
+        idx_mat = find_closest_index(-97.14, 25.95, coords_fisicas)
+        usa_line = extract_line_string(idx_tj, idx_mat, coords_fisicas)
 
-    idx_tap = find_closest_index(-92.21, 14.53, coords_fisicas)
-    idx_xcalak = find_closest_index(-87.75, 18.15, coords_fisicas)
-    south_line = extract_line_string(idx_tap, idx_xcalak, coords_fisicas)
+        idx_tap = find_closest_index(-92.21, 14.53, coords_fisicas)
+        idx_xcalak = find_closest_index(-87.75, 18.15, coords_fisicas)
+        south_line = extract_line_string(idx_tap, idx_xcalak, coords_fisicas)
 
-    def is_on_line(lon, lat, line_coords, threshold=0.8):
-        if not line_coords: return False
-        return min(distance_geo([lon, lat], p) for p in line_coords) < threshold
+        def is_on_line(lon, lat, line_coords, threshold=0.8):
+            if not line_coords: return False
+            return min(distance_geo([lon, lat], p) for p in line_coords) < threshold
 
-    def get_subline(lon1, lat1, lon2, lat2, line_coords):
-        i1, i2 = find_closest_index(lon1, lat1, line_coords), find_closest_index(lon2, lat2, line_coords)
-        if i1 <= i2: return line_coords[i1:i2+1]
-        else: return line_coords[i1:i2-1:-1] if i2 > 0 else line_coords[i1::-1]
+        def get_subline(lon1, lat1, lon2, lat2, line_coords):
+            i1, i2 = find_closest_index(lon1, lat1, line_coords), find_closest_index(lon2, lat2, line_coords)
+            if i1 <= i2: return line_coords[i1:i2+1]
+            else: return line_coords[i1:i2-1:-1] if i2 > 0 else line_coords[i1::-1]
 
-    for nombre_hoja, df_sheet in dict_espacio.items():
-        dict_espacio_procesado[nombre_hoja] = {}
-        for sector_name, df_subsector in df_sheet.groupby('Área / Sector'):
-            sector_coords = df_subsector[['Latitud (Decimal)', 'Longitud (Decimal)']].to_dict('records')
-            new_coords = []
-            num_pts = len(sector_coords)
-            
-            for i in range(num_pts):
-                lat1, lon1 = sector_coords[i]['Latitud (Decimal)'], sector_coords[i]['Longitud (Decimal)']
-                lat2, lon2 = sector_coords[(i + 1) % num_pts]['Latitud (Decimal)'], sector_coords[(i + 1) % num_pts]['Longitud (Decimal)']
-                new_coords.append([lat1, lon1])
+        for nombre_hoja, df_sheet in dict_espacio.items():
+            dict_espacio_procesado[nombre_hoja] = {}
+            for sector_name, df_subsector in df_sheet.groupby('Área / Sector'):
+                sector_coords = df_subsector[['Latitud (Decimal)', 'Longitud (Decimal)']].to_dict('records')
+                new_coords = []
+                num_pts = len(sector_coords)
                 
-                if is_on_line(lon1, lat1, usa_line) and is_on_line(lon2, lat2, usa_line):
-                    for p in get_subline(lon1, lat1, lon2, lat2, usa_line)[1:-1]: new_coords.append([p[1], p[0]])
-                elif is_on_line(lon1, lat1, south_line) and is_on_line(lon2, lat2, south_line):
-                    for p in get_subline(lon1, lat1, lon2, lat2, south_line)[1:-1]: new_coords.append([p[1], p[0]])
+                for i in range(num_pts):
+                    lat1, lon1 = sector_coords[i]['Latitud (Decimal)'], sector_coords[i]['Longitud (Decimal)']
+                    lat2, lon2 = sector_coords[(i + 1) % num_pts]['Latitud (Decimal)'], sector_coords[(i + 1) % num_pts]['Longitud (Decimal)']
+                    new_coords.append([lat1, lon1])
+                    
+                    if is_on_line(lon1, lat1, usa_line) and is_on_line(lon2, lat2, usa_line):
+                        for p in get_subline(lon1, lat1, lon2, lat2, usa_line)[1:-1]: new_coords.append([p[1], p[0]])
+                    elif is_on_line(lon1, lat1, south_line) and is_on_line(lon2, lat2, south_line):
+                        for p in get_subline(lon1, lat1, lon2, lat2, south_line)[1:-1]: new_coords.append([p[1], p[0]])
 
-            dict_espacio_procesado[nombre_hoja][sector_name] = pd.DataFrame(new_coords, columns=['Latitud (Decimal)', 'Longitud (Decimal)'])
+                dict_espacio_procesado[nombre_hoja][sector_name] = pd.DataFrame(new_coords, columns=['Latitud (Decimal)', 'Longitud (Decimal)'])
+    else:
+        raise Exception("No se pudo cargar el GeoJSON de la frontera.")
 except Exception:
     for nombre_hoja, df_sheet in dict_espacio.items():
         dict_espacio_procesado[nombre_hoja] = {s: d for s, d in df_sheet.groupby('Área / Sector')}
@@ -513,7 +527,6 @@ for nombre_hoja, sectores in dict_espacio_procesado.items():
             match = re.search(r'SEC\s*\d+', str(sector_name).upper())
             etiq = match.group(0) if match else sector_name
             
-            # ETIQUETA SEC 1 DE MÉRIDA DENTRO DEL SECTOR
             if "MERIDA SEC 1" in str(sector_name).upper():
                 cent_lat, cent_lon = 17.50, -93.50
             else:

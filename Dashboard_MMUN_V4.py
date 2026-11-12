@@ -41,7 +41,7 @@ def get_base64_of_bin_file(bin_file):
 img_base64 = get_base64_of_bin_file('Seneam_Logo.png')
 logo_html = f'<img src="data:image/png;base64,{img_base64}" style="height: 60px; vertical-align: middle; margin-right: 15px;">' if img_base64 else ""
 
-# Estilos CSS personalizados
+# Estilos CSS personalizados (con corrección para el botón de la barra lateral)
 st.markdown("""
     <style>
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { 
@@ -51,6 +51,15 @@ st.markdown("""
     [data-testid="stSidebar"] {
         background-color: #08172c !important;
         border-right: 1px solid #00FFFF !important;
+    }
+
+    /* Corrección para hacer visible el botón de colapsar/expandir la barra lateral */
+    [data-testid="collapsedControl"] {
+        color: #FFFFFF !important;
+    }
+    [data-testid="collapsedControl"] svg {
+        fill: #FFFFFF !important;
+        color: #FFFFFF !important;
     }
 
     h1 { color: #FFFFFF !important; font-family: 'Helvetica Neue', sans-serif; display: flex; align-items: center; }
